@@ -1,6 +1,6 @@
 # Eva-Desktop
 
-- cooking a very cute AI asstant to beat the shit out of Alexa, and your loneliness.
+cooking a very cute AI assistant to beat the shit out of Alexa, and your loneliness.
 
 ## Plans
 
