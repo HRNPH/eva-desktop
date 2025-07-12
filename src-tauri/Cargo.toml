@@ -18,8 +18,22 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-opener = "2"
+tauri-plugin-store = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+pv_porcupine = "3.0.3"
+cpal = "0.15"
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+# Audio resampling and processing
+rubato = "0.15"
+# WAV file writing for debugging
+hound = "3.5"
+# Secure keychain storage for access keys
+keyring = "3.0"
+# Logging
+log = "0.4"
+env_logger = "0.11"
 

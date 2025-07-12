@@ -146,3 +146,9 @@ src-tauri/src/
 - Multi-language support
 - Cloud sync for settings and preferences
 - Mobile companion app integration
+
+## Portability Considerations
+- Ensure this will work on MacOS, and Linux
+- Use platform-agnostic libraries where possible
+- Test on all target platforms during development
+- Document any platform-specific quirks or requirements
