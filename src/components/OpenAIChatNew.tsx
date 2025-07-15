@@ -118,9 +118,11 @@ const OpenAIChat: React.FC = () => {
           addLog("🔊 Received audio chunk from Eva");
           // Queue audio chunks for continuous playback
           if (event.data?.delta) {
-            audioPlaybackService.queueAudioChunk(event.data.delta).catch((error) => {
-              console.warn("Failed to queue audio chunk:", error);
-            });
+            audioPlaybackService
+              .queueAudioChunk(event.data.delta)
+              .catch((error) => {
+                console.warn("Failed to queue audio chunk:", error);
+              });
           }
           break;
 
@@ -326,17 +328,23 @@ const OpenAIChat: React.FC = () => {
         try {
           audioChunkCount++;
           totalAudioBytes += audioData.byteLength;
-          
+
           // Log audio data info periodically
           if (audioChunkCount % 10 === 0) {
-            addLog(`🎤 Sent ${audioChunkCount} audio chunks (${totalAudioBytes} total bytes)`);
+            addLog(
+              `🎤 Sent ${audioChunkCount} audio chunks (${totalAudioBytes} total bytes)`
+            );
           }
-          
+
           // Send audio data directly to OpenAI Realtime API
           await openaiRealtimeService.sendAudioData(audioData);
         } catch (error) {
           console.error("Failed to send audio data:", error);
-          addLog(`❌ Audio send error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          addLog(
+            `❌ Audio send error: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`
+          );
         }
       });
 
@@ -357,14 +365,14 @@ const OpenAIChat: React.FC = () => {
       addLog("✅ Voice recording stopped");
 
       // Add a small delay to ensure all audio data is sent
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Commit the audio buffer to trigger processing
       await openaiRealtimeService.commitAudioBuffer();
       addLog("📤 Audio committed to OpenAI Realtime API");
 
       // Add another small delay before requesting response
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Create response
       await openaiRealtimeService.createResponse();
