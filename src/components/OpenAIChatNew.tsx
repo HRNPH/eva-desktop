@@ -5,6 +5,7 @@ import {
   RealtimeStatus,
 } from "../services/openai-simple";
 import { audioCaptureService } from "../services/audio-capture";
+import { audioPlaybackService } from "../services/audio-playback";
 import ApiKeySetup from "./ApiKeySetup";
 
 interface Message {
@@ -115,33 +116,11 @@ const OpenAIChat: React.FC = () => {
 
         case "response.audio.delta":
           addLog("🔊 Received audio chunk from Eva");
-          // Play audio chunks for voice response
+          // Queue audio chunks for continuous playback
           if (event.data?.delta) {
-            try {
-              // Convert base64 audio to ArrayBuffer and play
-              const audioData = atob(event.data.delta);
-              const arrayBuffer = new ArrayBuffer(audioData.length);
-              const view = new Uint8Array(arrayBuffer);
-              for (let i = 0; i < audioData.length; i++) {
-                view[i] = audioData.charCodeAt(i);
-              }
-
-              // Create audio context and play (basic implementation)
-              const audioContext = new AudioContext();
-              audioContext
-                .decodeAudioData(arrayBuffer)
-                .then((audioBuffer) => {
-                  const source = audioContext.createBufferSource();
-                  source.buffer = audioBuffer;
-                  source.connect(audioContext.destination);
-                  source.start();
-                })
-                .catch((error) => {
-                  console.warn("Could not play audio chunk:", error);
-                });
-            } catch (error) {
-              console.warn("Failed to process audio delta:", error);
-            }
+            audioPlaybackService.queueAudioChunk(event.data.delta).catch((error) => {
+              console.warn("Failed to queue audio chunk:", error);
+            });
           }
           break;
 
@@ -340,12 +319,24 @@ const OpenAIChat: React.FC = () => {
       addLog("🎤 Starting voice recording for Realtime API...");
 
       // Start audio capture and stream to Realtime API
+      let audioChunkCount = 0;
+      let totalAudioBytes = 0;
+
       await audioCaptureService.startCapture(async (audioData) => {
         try {
+          audioChunkCount++;
+          totalAudioBytes += audioData.byteLength;
+          
+          // Log audio data info periodically
+          if (audioChunkCount % 10 === 0) {
+            addLog(`🎤 Sent ${audioChunkCount} audio chunks (${totalAudioBytes} total bytes)`);
+          }
+          
           // Send audio data directly to OpenAI Realtime API
           await openaiRealtimeService.sendAudioData(audioData);
         } catch (error) {
           console.error("Failed to send audio data:", error);
+          addLog(`❌ Audio send error: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       });
 
@@ -365,9 +356,15 @@ const OpenAIChat: React.FC = () => {
       setIsRecording(false);
       addLog("✅ Voice recording stopped");
 
+      // Add a small delay to ensure all audio data is sent
+      await new Promise(resolve => setTimeout(resolve, 200));
+
       // Commit the audio buffer to trigger processing
       await openaiRealtimeService.commitAudioBuffer();
       addLog("📤 Audio committed to OpenAI Realtime API");
+
+      // Add another small delay before requesting response
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Create response
       await openaiRealtimeService.createResponse();
@@ -395,6 +392,8 @@ const OpenAIChat: React.FC = () => {
   const handleInterrupt = async () => {
     try {
       addLog("⏹️ Interrupting response...");
+      // Clear audio playback queue
+      audioPlaybackService.clearQueue();
       // Interrupt not implemented in simple service
       setCurrentResponse("");
       currentResponseRef.current = "";

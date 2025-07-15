@@ -1,11 +1,12 @@
 import { useState } from "react";
 import PorcupineTest from "./components/PorcupineTest";
 import OpenAIChat from "./components/OpenAIChatNew";
+import AudioDebugTest from "./components/AudioDebugTest";
 import "./App.css";
 
 function App() {
   const [currentView, setCurrentView] = useState<
-    "main" | "porcupine" | "openai"
+    "main" | "porcupine" | "openai" | "audio-debug"
   >("main");
 
   return (
@@ -33,6 +34,16 @@ function App() {
           🤖 Eva Chat
         </button>
         <button
+          onClick={() => setCurrentView("audio-debug")}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            currentView === "audio-debug"
+              ? "bg-blue-600 text-white"
+              : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+          }`}
+        >
+          🧪 Audio Debug
+        </button>
+        <button
           onClick={() => setCurrentView("porcupine")}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             currentView === "porcupine"
@@ -49,6 +60,8 @@ function App() {
           return <PorcupineTest />;
         } else if (currentView === "openai") {
           return <OpenAIChat />;
+        } else if (currentView === "audio-debug") {
+          return <AudioDebugTest />;
         } else {
           return (
             <div className="w-full max-w-4xl">

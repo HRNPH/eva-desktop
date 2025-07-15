@@ -234,13 +234,28 @@ export class OpenAIRealtimeService {
     }
 
     try {
-      // Convert ArrayBuffer to base64
+      // Validate audio data
+      if (audioData.byteLength === 0) {
+        console.warn('⚠️ Attempted to send empty audio buffer');
+        return;
+      }
+
+      // Check audio content for debugging
+      const int16View = new Int16Array(audioData);
+      const samples = Array.from(int16View.slice(0, 5));
+      const maxSample = Math.max(...int16View.map(Math.abs));
+      
+      console.debug(`📤 Sending audio: ${audioData.byteLength} bytes, max amplitude: ${maxSample}, samples: [${samples.join(', ')}...]`);
+
+      // Convert ArrayBuffer to base64 for transmission
       const base64Audio = this.arrayBufferToBase64(audioData);
       
+      // Send audio data to OpenAI with proper event format
       this.sendRealtimeEvent({
         type: 'input_audio_buffer.append',
         audio: base64Audio
       });
+      
     } catch (error) {
       console.error('Failed to send audio data:', error);
       throw error;
@@ -268,11 +283,17 @@ export class OpenAIRealtimeService {
   }
 
   private arrayBufferToBase64(buffer: ArrayBuffer): string {
+    // Use a more reliable method for ArrayBuffer to base64 conversion
     const bytes = new Uint8Array(buffer);
     let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    
+    // Process in chunks to avoid stack overflow for large buffers
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
     }
+    
     return btoa(binary);
   }
 

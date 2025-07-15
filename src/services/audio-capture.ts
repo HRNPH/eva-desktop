@@ -9,9 +9,9 @@ export class AudioCaptureService {
   private audioStream: MediaStream | null = null;
   private isRecording = false;
   private audioContext: AudioContext | null = null;
-  private analyserNode: AnalyserNode | null = null;
+  private sourceNode: MediaStreamAudioSourceNode | null = null;
+  private audioWorkletNode: AudioWorkletNode | null = null;
   private onAudioData?: (audioData: ArrayBuffer) => void;
-  private intervalId?: number;
 
   private readonly config: AudioCaptureConfig = {
     sampleRate: 24000, // OpenAI Realtime API expects 24kHz
@@ -28,33 +28,44 @@ export class AudioCaptureService {
     this.onAudioData = onAudioData;
 
     try {
-      // Request microphone access
+      // Request microphone access with specific constraints for high quality
       this.audioStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: this.config.sampleRate,
           channelCount: this.config.channels,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
+          echoCancellation: false, // Disable to preserve natural voice
+          noiseSuppression: false, // Disable to preserve natural voice  
+          autoGainControl: false,  // We'll handle gain manually
+          googEchoCancellation: false,
+          googNoiseSuppression: false,
+          googAutoGainControl: false,
+          googHighpassFilter: false,
+        } as any // Cast to any to include Google-specific constraints
       });
 
-      // Set up Web Audio API for processing
+      // Create AudioContext with the desired sample rate
       this.audioContext = new AudioContext({
         sampleRate: this.config.sampleRate
       });
 
-      const source = this.audioContext.createMediaStreamSource(this.audioStream);
-      this.analyserNode = this.audioContext.createAnalyser();
-      this.analyserNode.fftSize = this.config.bufferSize;
-      
-      source.connect(this.analyserNode);
+      // Log actual sample rate for debugging
+      console.log(`🎤 AudioContext sample rate: ${this.audioContext.sampleRate}Hz`);
 
-      // Use a simpler approach with periodic sampling
-      this.startPeriodicSampling();
+      // Create audio source from the media stream
+      this.sourceNode = this.audioContext.createMediaStreamSource(this.audioStream);
+
+      // Use a simpler approach with AnalyserNode and periodic sampling for real audio data
+      const analyser = this.audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0;
+      
+      this.sourceNode.connect(analyser);
+
+      // Start capturing real audio data periodically
+      this.startRealAudioCapture(analyser);
 
       this.isRecording = true;
-      console.log('🎤 Audio capture started');
+      console.log('🎤 Audio capture started with real audio streaming');
 
     } catch (error) {
       console.error('Failed to start audio capture:', error);
@@ -62,28 +73,75 @@ export class AudioCaptureService {
     }
   }
 
-  private startPeriodicSampling(): void {
-    const bufferLength = this.analyserNode!.frequencyBinCount;
-    const dataArray = new Float32Array(bufferLength);
+  private startRealAudioCapture(analyser: AnalyserNode): void {
+    const bufferLength = 2048; // Use analyser.fftSize for proper buffer size
+    const audioBuffer = new Float32Array(bufferLength);
+    let lastCaptureTime = 0;
+    const captureInterval = 50; // Capture every 50ms for better audio quality
 
-    const sample = () => {
-      if (!this.isRecording || !this.analyserNode) return;
+    const captureAudio = (currentTime: number) => {
+      if (!this.isRecording) return;
 
-      this.analyserNode.getFloatTimeDomainData(dataArray);
-      
-      // Convert Float32Array to Int16Array for OpenAI
-      const int16Array = this.float32ToInt16(dataArray);
-      
-      // Create a proper ArrayBuffer
-      const arrayBuffer = new ArrayBuffer(int16Array.byteLength);
-      const view = new Int16Array(arrayBuffer);
-      view.set(int16Array);
-      
-      this.onAudioData?.(arrayBuffer);
+      // Throttle capture rate but capture more frequently for better audio
+      if (currentTime - lastCaptureTime >= captureInterval) {
+        // Get actual time domain audio data (not frequency data)
+        analyser.getFloatTimeDomainData(audioBuffer);
+        
+        // Calculate RMS (Root Mean Square) for better signal detection
+        let sum = 0;
+        for (const sample of audioBuffer) {
+          sum += sample * sample;
+        }
+        const rms = Math.sqrt(sum / audioBuffer.length);
+        
+        // Lower threshold and always send some audio to maintain stream
+        const hasSignal = rms > 0.001; // Much lower threshold
+        
+        if (hasSignal || Math.random() < 0.1) { // Send occasional silence to maintain stream
+          // Convert to 16-bit PCM format expected by OpenAI
+          const pcm16Buffer = this.convertToPCM16(audioBuffer);
+          
+          // Send the audio data
+          this.onAudioData?.(pcm16Buffer);
+          console.debug(`🎤 Captured ${audioBuffer.length} samples, RMS: ${rms.toFixed(4)}`);
+        }
+        
+        lastCaptureTime = currentTime;
+      }
+
+      // Continue capturing
+      requestAnimationFrame(captureAudio);
     };
 
-    // Sample at ~60fps for smooth audio processing
-    this.intervalId = window.setInterval(sample, 16);
+    // Start the capture loop
+    requestAnimationFrame(captureAudio);
+  }
+
+  private convertToPCM16(float32Array: Float32Array): ArrayBuffer {
+    // Create 16-bit PCM buffer
+    const pcm16Array = new Int16Array(float32Array.length);
+    
+    // Calculate RMS for auto-gain
+    let sum = 0;
+    for (const sample of float32Array) {
+      sum += sample * sample;
+    }
+    const rms = Math.sqrt(sum / float32Array.length);
+    
+    // Apply gain to boost quiet audio (but prevent clipping)
+    const targetRms = 0.1; // Target RMS level
+    const gain = rms > 0 ? Math.min(targetRms / rms, 4.0) : 1.0; // Max 4x gain
+    
+    for (let i = 0; i < float32Array.length; i++) {
+      // Apply gain and clamp the float value to [-1, 1]
+      const amplified = float32Array[i] * gain;
+      const sample = Math.max(-1, Math.min(1, amplified));
+      pcm16Array[i] = Math.round(sample * 0x7FFF);
+    }
+    
+    console.debug(`🎤 Audio conversion: RMS=${rms.toFixed(4)}, Gain=${gain.toFixed(2)}`);
+    
+    return pcm16Array.buffer;
   }
 
   async stopCapture(): Promise<void> {
@@ -94,40 +152,39 @@ export class AudioCaptureService {
 
     this.isRecording = false;
 
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = undefined;
+    // Clean up audio worklet node
+    if (this.audioWorkletNode) {
+      this.audioWorkletNode.disconnect();
+      this.audioWorkletNode = null;
     }
 
+    // Clean up source node
+    if (this.sourceNode) {
+      this.sourceNode.disconnect();
+      this.sourceNode = null;
+    }
+
+    // Stop all tracks in the stream
     if (this.audioStream) {
       this.audioStream.getTracks().forEach(track => track.stop());
       this.audioStream = null;
     }
 
-    if (this.audioContext) {
+    // Close audio context
+    if (this.audioContext && this.audioContext.state !== 'closed') {
       await this.audioContext.close();
       this.audioContext = null;
     }
 
+    // Clean up media recorder if used
     if (this.mediaRecorder) {
       this.mediaRecorder.stop();
       this.mediaRecorder = null;
     }
 
-    this.analyserNode = null;
     this.onAudioData = undefined;
     
     console.log('🎤 Audio capture stopped');
-  }
-
-  private float32ToInt16(float32Array: Float32Array): Int16Array {
-    const int16Array = new Int16Array(float32Array.length);
-    for (let i = 0; i < float32Array.length; i++) {
-      // Clamp to [-1, 1] and convert to 16-bit signed integer
-      const sample = Math.max(-1, Math.min(1, float32Array[i]));
-      int16Array[i] = sample * 0x7FFF;
-    }
-    return int16Array;
   }
 
   getRecordingState(): boolean {

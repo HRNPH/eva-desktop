@@ -36,10 +36,4 @@ keyring = "3.0"
 # Logging
 log = "0.4"
 env_logger = "0.11"
-# HTTP client for OpenAI API (will be used by frontend)
-reqwest = { version = "0.12", features = ["json", "stream"] }
-# Base64 encoding for audio
-base64 = "0.22"
-# UUID for session management
-uuid = { version = "1.0", features = ["v4"] }
 
