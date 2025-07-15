@@ -18,6 +18,7 @@ interface Message {
 const OpenAIChat: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isWakeWordActive, setIsWakeWordActive] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentInput, setCurrentInput] = useState("");
   const [status, setStatus] = useState<RealtimeStatus>({
@@ -217,11 +218,23 @@ const OpenAIChat: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, currentResponse]);
 
-  // Listen for wake word events from Porcupine
+  // Listen for wake word events from Porcupine and auto-start detection
   useEffect(() => {
     const setupWakeWordListener = async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
+        const { invoke } = await import("@tauri-apps/api/core");
+
+        // Start wake word detection automatically
+        try {
+          const result = await invoke<string>("start_wake_word");
+          addLog(`🎤 Wake word detection started: ${result}`);
+          setIsWakeWordActive(true);
+        } catch (error) {
+          console.error("Failed to start wake word detection:", error);
+          addLog(`❌ Failed to start wake word detection: ${error}`);
+          setIsWakeWordActive(false);
+        }
 
         const unlisten = await listen("wake-word-detected", async (event) => {
           const wakeWordData = event.payload as any;
@@ -256,6 +269,21 @@ const OpenAIChat: React.FC = () => {
     };
 
     setupWakeWordListener();
+
+    // Cleanup: stop wake word detection when component unmounts
+    return () => {
+      const cleanup = async () => {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke<string>("stop_wake_word");
+          addLog("🎤 Wake word detection stopped");
+          setIsWakeWordActive(false);
+        } catch (error) {
+          console.error("Failed to stop wake word detection:", error);
+        }
+      };
+      cleanup();
+    };
   }, [isConnected, status.apiKey]);
 
   const handleConnect = async () => {
@@ -466,7 +494,7 @@ const OpenAIChat: React.FC = () => {
                 Wake Word
               </div>
               <div className="font-semibold text-gray-800 dark:text-white">
-                🎯 "Hey Eva"
+                {isWakeWordActive ? "🟢 Active" : "🔴 Inactive"}
               </div>
             </div>
           </div>
@@ -474,7 +502,7 @@ const OpenAIChat: React.FC = () => {
           {/* Wake Word Info */}
           <div className="mb-4 p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
             <p className="text-sm text-purple-700 dark:text-purple-300">
-              💡 <strong>Voice Activation:</strong> Say "Hey Eva" to
+              💡 <strong>Voice Activation:</strong> Say "Hi Eva" to
               automatically start voice chat using OpenAI Realtime API!
               Real-time audio processing and responses.
             </p>
