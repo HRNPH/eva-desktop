@@ -81,12 +81,21 @@ const OpenAIChat: React.FC = () => {
 
         case "conversation.item.created":
           addLog("💬 Conversation item created");
+          console.log("💬 Full conversation item:", event.data?.item);
+
           if (event.data?.item?.content) {
             const content = event.data.item.content;
             if (content[0]?.transcript) {
+              addLog(`📝 User transcript: "${content[0].transcript}"`);
               addMessage({
                 type: "user",
                 content: content[0].transcript,
+              });
+            } else if (content[0]?.text) {
+              addLog(`📝 User text: "${content[0].text}"`);
+              addMessage({
+                type: "user",
+                content: content[0].text,
               });
             }
           }
@@ -95,37 +104,58 @@ const OpenAIChat: React.FC = () => {
         case "response.created":
           addLog("🤖 Eva is preparing response...");
           setIsLoading(true);
+          // Reset response accumulation
+          currentResponseRef.current = "";
+          setCurrentResponse("");
           break;
 
         case "response.text.delta":
           if (event.data?.delta) {
             currentResponseRef.current += event.data.delta;
             setCurrentResponse(currentResponseRef.current);
+            addLog(`📝 Text delta: "${event.data.delta}"`);
           }
           break;
 
         case "response.text.done":
-          if (currentResponseRef.current) {
-            addMessage({
-              type: "assistant",
-              content: currentResponseRef.current,
-            });
-            currentResponseRef.current = "";
-            setCurrentResponse("");
-          }
+          addLog(`📝 Text response completed: "${currentResponseRef.current}"`);
+          // Note: We'll save to history when the entire response is done
           break;
 
-        case "response.audio.delta":
+        case "response.audio.delta": {
           addLog("🔊 Received audio chunk from Eva");
-          // Queue audio chunks for continuous playback
-          if (event.data?.delta) {
+          console.log("🔊 Full audio delta event:", event);
+
+          // Try different possible locations for audio data
+          const audioData =
+            event.data?.delta || (event as any).delta || event.data?.audio;
+
+          if (audioData) {
+            addLog(`🎵 Queueing audio chunk (${audioData.length} chars)`);
+            console.log(
+              "🎵 Audio delta sample:",
+              audioData.substring(0, 100) + "..."
+            );
+
             audioPlaybackService
-              .queueAudioChunk(event.data.delta)
+              .queueAudioChunk(audioData)
+              .then(() => {
+                addLog("✅ Audio chunk queued successfully");
+              })
               .catch((error) => {
-                console.warn("Failed to queue audio chunk:", error);
+                addLog(`❌ Failed to queue audio chunk: ${error.message}`);
+                console.error("Failed to queue audio chunk:", error);
               });
+          } else {
+            addLog("⚠️ No audio data found in response.audio.delta event");
+            console.log("⚠️ Available keys in event:", Object.keys(event));
+            console.log(
+              "⚠️ Available keys in event.data:",
+              event.data ? Object.keys(event.data) : "no data"
+            );
           }
           break;
+        }
 
         case "response.audio.done":
           addLog("🔊 Eva audio response completed");
@@ -133,6 +163,28 @@ const OpenAIChat: React.FC = () => {
 
         case "response.done":
           addLog("✅ Eva response completed");
+
+          // Save the complete response to chat history
+          if (currentResponseRef.current.trim()) {
+            addMessage({
+              type: "assistant",
+              content: currentResponseRef.current.trim(),
+            });
+            addLog(
+              `💾 Saved Eva's response to history: "${currentResponseRef.current.trim()}"`
+            );
+          } else {
+            // If no text but Eva responded (audio-only response)
+            addMessage({
+              type: "assistant",
+              content: "(Audio response)",
+            });
+            addLog("💾 Saved audio-only response to history");
+          }
+
+          // Clear the current response
+          currentResponseRef.current = "";
+          setCurrentResponse("");
           setIsLoading(false);
           break;
 
@@ -391,20 +443,6 @@ const OpenAIChat: React.FC = () => {
 
       setIsRecording(false);
       addLog("✅ Voice recording stopped");
-
-      // Add a small delay to ensure all audio data is sent
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      // Commit the audio buffer to trigger processing
-      await openaiRealtimeService.commitAudioBuffer();
-      addLog("📤 Audio committed to OpenAI Realtime API");
-
-      // Add another small delay before requesting response
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Create response
-      await openaiRealtimeService.createResponse();
-      addLog("🤖 Requesting response from Eva...");
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
@@ -439,6 +477,36 @@ const OpenAIChat: React.FC = () => {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
       addLog(`❌ Failed to interrupt: ${errorMessage}`);
+    }
+  };
+
+  const handleTestAudio = async () => {
+    try {
+      addLog("🎵 Testing audio playback...");
+      await audioPlaybackService.testAudio();
+      addLog("✅ Audio test completed");
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      addLog(`❌ Audio test failed: ${errorMessage}`);
+    }
+  };
+
+  const handleResetHistory = () => {
+    if (messages.length === 0) {
+      addLog("ℹ️ Chat history is already empty");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to clear all ${messages.length} messages from the chat history? This action cannot be undone.`
+    );
+
+    if (confirmed) {
+      setMessages([]);
+      addLog("🗑️ Chat history cleared");
+    } else {
+      addLog("❌ Reset history cancelled");
     }
   };
 
@@ -544,7 +612,7 @@ const OpenAIChat: React.FC = () => {
                     disabled={isLoading}
                     className="bg-orange-500 hover:bg-orange-600 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-medium transition-colors"
                   >
-                    ⏹️ Stop & Send
+                    ⏹️ Stop
                   </button>
                 )}
 
@@ -558,6 +626,23 @@ const OpenAIChat: React.FC = () => {
                 )}
               </>
             )}
+
+            {/* Test Audio Button */}
+            <button
+              onClick={handleTestAudio}
+              className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              🔊 Test Audio
+            </button>
+
+            {/* Reset History Button */}
+            <button
+              onClick={handleResetHistory}
+              className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+              title="Clear chat history"
+            >
+              🗑️ Reset History
+            </button>
           </div>
         </div>
       </div>
@@ -648,9 +733,14 @@ const OpenAIChat: React.FC = () => {
 
         {/* Logs Panel */}
         <div className="w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4">
-          <h3 className="font-semibold text-gray-800 dark:text-white mb-4">
-            📋 Activity Logs
-          </h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-semibold text-gray-800 dark:text-white">
+              📋 Activity Logs
+            </h3>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {messages.length} messages
+            </div>
+          </div>
           <div className="h-96 overflow-y-auto space-y-1 text-xs font-mono">
             {logs.map((log) => (
               <div

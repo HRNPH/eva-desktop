@@ -131,6 +131,8 @@ export class OpenAIRealtimeService {
 
   private handleRealtimeEvent(event: any): void {
     console.log('📨 Realtime event:', event.type);
+    console.log('🔍 Event keys:', Object.keys(event));
+    console.log('🔍 Full event data:', JSON.stringify(event, null, 2));
 
     switch (event.type) {
       case 'session.created':
@@ -170,6 +172,7 @@ export class OpenAIRealtimeService {
         break;
 
       case 'response.audio.delta':
+        console.log('🔊 Raw response.audio.delta event:', JSON.stringify(event, null, 2));
         this.emit('response.audio.delta', event);
         break;
 
@@ -178,6 +181,23 @@ export class OpenAIRealtimeService {
         break;
 
       case 'response.done':
+        console.log('📝 Response details:', event.response);
+        if (event.response?.status === 'failed') {
+          const error = event.response.status_details?.error;
+          if (error?.type === 'insufficient_quota') {
+            console.error('💳 QUOTA EXCEEDED: Please check your OpenAI billing');
+            this.emit('error', {
+              type: 'quota_exceeded',
+              message: 'OpenAI quota exceeded. Please check your billing at https://platform.openai.com/account/billing'
+            });
+          } else {
+            console.error('❌ Response failed:', error);
+            this.emit('error', {
+              type: 'response_failed',
+              message: error?.message || 'Response failed'
+            });
+          }
+        }
         this.emit('response.done', event);
         break;
 
@@ -186,7 +206,8 @@ export class OpenAIRealtimeService {
         break;
 
       default:
-        console.log(`Unhandled event type: ${event.type}`);
+        console.log(`🔍 Unhandled event type: ${event.type}, keys:`, Object.keys(event));
+        console.log(`🔍 Unhandled event data:`, JSON.stringify(event, null, 2));
     }
   }
 
