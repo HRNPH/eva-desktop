@@ -125,17 +125,20 @@ const OpenAIChat: React.FC = () => {
               for (let i = 0; i < audioData.length; i++) {
                 view[i] = audioData.charCodeAt(i);
               }
-              
+
               // Create audio context and play (basic implementation)
               const audioContext = new AudioContext();
-              audioContext.decodeAudioData(arrayBuffer).then(audioBuffer => {
-                const source = audioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioContext.destination);
-                source.start();
-              }).catch(error => {
-                console.warn("Could not play audio chunk:", error);
-              });
+              audioContext
+                .decodeAudioData(arrayBuffer)
+                .then((audioBuffer) => {
+                  const source = audioContext.createBufferSource();
+                  source.buffer = audioBuffer;
+                  source.connect(audioContext.destination);
+                  source.start();
+                })
+                .catch((error) => {
+                  console.warn("Could not play audio chunk:", error);
+                });
             } catch (error) {
               console.warn("Failed to process audio delta:", error);
             }
@@ -177,8 +180,14 @@ const OpenAIChat: React.FC = () => {
     openaiRealtimeService.on("response.text.done", handleOpenAIEvent);
     openaiRealtimeService.on("response.audio.delta", handleOpenAIEvent);
     openaiRealtimeService.on("response.audio.done", handleOpenAIEvent);
-    openaiRealtimeService.on("input_audio_buffer.speech_started", handleOpenAIEvent);
-    openaiRealtimeService.on("input_audio_buffer.speech_stopped", handleOpenAIEvent);
+    openaiRealtimeService.on(
+      "input_audio_buffer.speech_started",
+      handleOpenAIEvent
+    );
+    openaiRealtimeService.on(
+      "input_audio_buffer.speech_stopped",
+      handleOpenAIEvent
+    );
     openaiRealtimeService.on("input_audio_buffer.committed", handleOpenAIEvent);
     openaiRealtimeService.on("conversation.item.created", handleOpenAIEvent);
     openaiRealtimeService.on("response.created", handleOpenAIEvent);
@@ -203,9 +212,18 @@ const OpenAIChat: React.FC = () => {
       openaiRealtimeService.off("response.text.done", handleOpenAIEvent);
       openaiRealtimeService.off("response.audio.delta", handleOpenAIEvent);
       openaiRealtimeService.off("response.audio.done", handleOpenAIEvent);
-      openaiRealtimeService.off("input_audio_buffer.speech_started", handleOpenAIEvent);
-      openaiRealtimeService.off("input_audio_buffer.speech_stopped", handleOpenAIEvent);
-      openaiRealtimeService.off("input_audio_buffer.committed", handleOpenAIEvent);
+      openaiRealtimeService.off(
+        "input_audio_buffer.speech_started",
+        handleOpenAIEvent
+      );
+      openaiRealtimeService.off(
+        "input_audio_buffer.speech_stopped",
+        handleOpenAIEvent
+      );
+      openaiRealtimeService.off(
+        "input_audio_buffer.committed",
+        handleOpenAIEvent
+      );
       openaiRealtimeService.off("conversation.item.created", handleOpenAIEvent);
       openaiRealtimeService.off("response.created", handleOpenAIEvent);
       openaiRealtimeService.off("response.done", handleOpenAIEvent);
@@ -223,15 +241,15 @@ const OpenAIChat: React.FC = () => {
     const setupWakeWordListener = async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
-        
+
         const unlisten = await listen("wake-word-detected", async (event) => {
           const wakeWordData = event.payload as any;
           addLog(`🎯 Wake word detected: "${wakeWordData.keyword}"`);
-          
+
           // Auto-start voice input when wake word is detected
-          if (status.apiKey === 'configured') {
+          if (status.apiKey === "configured") {
             addLog("🤖 Eva activated! Starting voice input...");
-            
+
             // Connect if needed
             if (!isConnected) {
               try {
@@ -320,14 +338,14 @@ const OpenAIChat: React.FC = () => {
   const handleStartRecording = async () => {
     try {
       addLog("🎤 Starting voice recording for Realtime API...");
-      
+
       // Start audio capture and stream to Realtime API
       await audioCaptureService.startCapture(async (audioData) => {
         try {
           // Send audio data directly to OpenAI Realtime API
           await openaiRealtimeService.sendAudioData(audioData);
         } catch (error) {
-          console.error('Failed to send audio data:', error);
+          console.error("Failed to send audio data:", error);
         }
       });
 
@@ -338,22 +356,22 @@ const OpenAIChat: React.FC = () => {
         error instanceof Error ? error.message : "Unknown error";
       addLog(`❌ Failed to start recording: ${errorMessage}`);
     }
-  };  const handleStopRecording = async () => {
+  };
+  const handleStopRecording = async () => {
     try {
       addLog("🎤 Stopping voice recording...");
       await audioCaptureService.stopCapture();
-      
+
       setIsRecording(false);
       addLog("✅ Voice recording stopped");
-      
+
       // Commit the audio buffer to trigger processing
       await openaiRealtimeService.commitAudioBuffer();
       addLog("📤 Audio committed to OpenAI Realtime API");
-      
+
       // Create response
       await openaiRealtimeService.createResponse();
       addLog("🤖 Requesting response from Eva...");
-      
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
@@ -368,7 +386,8 @@ const OpenAIChat: React.FC = () => {
       addLog("🎤 Starting voice input via Realtime API...");
       await handleStartRecording();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
       addLog(`❌ Failed to start voice input: ${errorMessage}`);
     }
   };
@@ -448,7 +467,9 @@ const OpenAIChat: React.FC = () => {
           {/* Wake Word Info */}
           <div className="mb-4 p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
             <p className="text-sm text-purple-700 dark:text-purple-300">
-              💡 <strong>Voice Activation:</strong> Say "Hey Eva" to automatically start voice chat using OpenAI Realtime API! Real-time audio processing and responses.
+              💡 <strong>Voice Activation:</strong> Say "Hey Eva" to
+              automatically start voice chat using OpenAI Realtime API!
+              Real-time audio processing and responses.
             </p>
           </div>
 
